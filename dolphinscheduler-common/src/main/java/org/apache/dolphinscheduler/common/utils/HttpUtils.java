@@ -14,85 +14,143 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.dolphinscheduler.common.utils;
 
-import org.apache.dolphinscheduler.common.Constants;
+import org.apache.dolphinscheduler.common.constants.Constants;
+
 import org.apache.http.HttpEntity;
+import org.apache.http.client.config.AuthSchemes;
+import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.DefaultHostnameVerifier;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.util.EntityUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+
+import javax.net.ssl.SSLContext;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
- * http utils
+ * HTTP utilities class with secure SSL context.
  */
+@Slf4j
 public class HttpUtils {
-	
-	
-	public static final Logger logger = LoggerFactory.getLogger(HttpUtils.class);
 
-	/**
-	 * get http request content
-	 * @param url url
-	 * @return http get request response content
-	 */
-	public static String get(String url){
-		CloseableHttpClient httpclient = HttpClients.createDefault();
+    private static final PoolingHttpClientConnectionManager cm;
+    private static final SSLContext ctx;
+    private static final SSLConnectionSocketFactory socketFactory;
+    private static final RequestConfig requestConfig;
 
-		HttpGet httpget = new HttpGet(url);
-		/** set timeout、request time、socket timeout */
-		RequestConfig requestConfig = RequestConfig.custom().setConnectTimeout(Constants.HTTP_CONNECT_TIMEOUT)
-				.setConnectionRequestTimeout(Constants.HTTP_CONNECTION_REQUEST_TIMEOUT)
-				.setSocketTimeout(Constants.SOCKET_TIMEOUT)
-				.setRedirectsEnabled(true)
-				.build();
-		httpget.setConfig(requestConfig);
-		String responseContent = null;
-		CloseableHttpResponse response = null;
+    static {
+        try {
+            // Use default SSL context which includes standard certificate validation
+            ctx = SSLContext.getDefault();
+        } catch (NoSuchAlgorithmException e) {
+            log.error("Failed to get default SSLContext", e);
+            throw new RuntimeException("Failed to get default SSLContext", e);
+        }
 
-		try {
-			response = httpclient.execute(httpget);
-			//check response status is 200
-			if (response.getStatusLine().getStatusCode() == 200) {
-				HttpEntity entity = response.getEntity();
-				if (entity != null) {
-					responseContent = EntityUtils.toString(entity, Constants.UTF_8);
-				}else{
-					logger.warn("http entity is null");
-				}
-			}else{
-				logger.error("http get:{} response status code is not 200!", response.getStatusLine().getStatusCode());
-			}
-		}catch (Exception e){
-			logger.error(e.getMessage(),e);
-		}finally {
-			try {
-				if (response != null) {
-					EntityUtils.consume(response.getEntity());
-					response.close();
-				}
-			} catch (IOException e) {
-				logger.error(e.getMessage(),e);
-			}
+        socketFactory = new SSLConnectionSocketFactory(ctx, new DefaultHostnameVerifier());
 
-			if (!httpget.isAborted()) {
-				httpget.releaseConnection();
-				httpget.abort();
-			}
+        // Set timeout, request time, socket timeout
+        requestConfig = RequestConfig.custom()
+                .setCookieSpec(CookieSpecs.IGNORE_COOKIES)
+                .setExpectContinueEnabled(Boolean.TRUE)
+                .setTargetPreferredAuthSchemes(Arrays.asList(AuthSchemes.NTLM, AuthSchemes.DIGEST, AuthSchemes.SPNEGO))
+                .setProxyPreferredAuthSchemes(Arrays.asList(AuthSchemes.BASIC, AuthSchemes.SPNEGO))
+                .setConnectTimeout(Constants.HTTP_CONNECT_TIMEOUT)
+                .setSocketTimeout(Constants.SOCKET_TIMEOUT)
+                .setConnectionRequestTimeout(Constants.HTTP_CONNECTION_REQUEST_TIMEOUT)
+                .setRedirectsEnabled(true)
+                .build();
 
-			try {
-				httpclient.close();
-			} catch (IOException e) {
-				logger.error(e.getMessage(),e);
-			}
-		}
-		return responseContent;
-	}
+        cm = new PoolingHttpClientConnectionManager(
+                RegistryBuilder.<ConnectionSocketFactory>create()
+                        .register("http", PlainConnectionSocketFactory.INSTANCE)
+                        .register("https", socketFactory)
+                        .build());
 
+        cm.setDefaultMaxPerRoute(60);
+        cm.setMaxTotal(100);
+    }
+
+    // Private constructor to prevent instantiation
+    private HttpUtils() {
+        throw new UnsupportedOperationException("This is a utility class and cannot be instantiated");
+    }
+
+    // Returns a singleton instance of the HTTP client
+    public static CloseableHttpClient getInstance() {
+        return HttpClientInstance.httpClient;
+    }
+
+    private static class HttpClientInstance {
+
+        private static final CloseableHttpClient httpClient = getHttpClientBuilder().build();
+    }
+
+    // Builds and returns an HttpClient with the custom configuration
+    public static HttpClientBuilder getHttpClientBuilder() {
+        return HttpClients.custom()
+                .setConnectionManager(cm)
+                .setDefaultRequestConfig(requestConfig);
+    }
+
+    /**
+     * Executes a GET request and returns the response content as a string.
+     *
+     * @param url The URL to send the GET request to
+     * @return The response content as a string
+     */
+    public static String get(String url) {
+        CloseableHttpClient httpClient = getInstance();
+        HttpGet httpGet = new HttpGet(url);
+        return getResponseContentString(httpGet, httpClient);
+    }
+
+    /**
+     * Gets the response content from an executed HttpGet request.
+     *
+     * @param httpGet     The HttpGet request to execute
+     * @param httpClient  The HttpClient to use for the request
+     * @return The response content as a string
+     */
+    public static String getResponseContentString(HttpGet httpGet, CloseableHttpClient httpClient) {
+        if (httpGet == null || httpClient == null) {
+            log.error("HttpGet or HttpClient parameter is null");
+            return null;
+        }
+
+        try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
+            // Check if the response status is 200 (OK)
+            if (response.getStatusLine().getStatusCode() != 200) {
+                log.error("HTTP GET request to {} returned status code: {}", httpGet.getURI(),
+                        response.getStatusLine().getStatusCode());
+                return null;
+            }
+
+            HttpEntity entity = response.getEntity();
+            return entity != null ? EntityUtils.toString(entity, StandardCharsets.UTF_8) : null;
+        } catch (IOException e) {
+            log.error("Error executing HTTP GET request", e);
+            return null;
+        } finally {
+            httpGet.releaseConnection();
+        }
+    }
 }

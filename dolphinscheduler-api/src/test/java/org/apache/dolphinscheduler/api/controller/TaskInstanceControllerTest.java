@@ -14,52 +14,97 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.dolphinscheduler.api.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import org.apache.dolphinscheduler.api.enums.Status;
+import org.apache.dolphinscheduler.api.service.TaskInstanceService;
+import org.apache.dolphinscheduler.api.utils.PageInfo;
 import org.apache.dolphinscheduler.api.utils.Result;
-import org.apache.dolphinscheduler.common.utils.*;
-import org.junit.Assert;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.dolphinscheduler.common.enums.TaskExecuteType;
+import org.apache.dolphinscheduler.common.utils.JSONUtils;
+import org.apache.dolphinscheduler.dao.entity.TaskInstance;
+import org.apache.dolphinscheduler.dao.entity.User;
+import org.apache.dolphinscheduler.plugin.task.api.TaskConstants;
+import org.apache.dolphinscheduler.plugin.task.api.enums.TaskExecutionStatus;
+
+import java.util.Collections;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+public class TaskInstanceControllerTest extends AbstractControllerTest {
 
-/**
- * task instance controller test
- */
-public class TaskInstanceControllerTest extends AbstractControllerTest{
-    private static Logger logger = LoggerFactory.getLogger(TaskInstanceControllerTest.class);
+    @InjectMocks
+    private TaskInstanceController taskInstanceController;
+
+    @Mock
+    private TaskInstanceService taskInstanceService;
 
     @Test
-    public void testQueryTaskListPaging() throws Exception {
+    public void testQueryTaskListPaging() {
 
+        Result<PageInfo<TaskInstance>> result = new Result<>();
+        Integer pageNo = 1;
+        Integer pageSize = 20;
+        TaskInstance taskInstance = new TaskInstance();
+        taskInstance.setTaskParams("{\"localParams\":[{\"prop\":\"token\",\"direct\":\"IN\",\"type\":\"VARCHAR\","
+                + "\"value\":\"abc\",\"sensitive\":true}]}");
+        PageInfo<TaskInstance> pageInfo = new PageInfo<>(pageNo, pageSize);
+        pageInfo.setTotalList(Collections.singletonList(taskInstance));
+        result.setData(pageInfo);
+        result.setCode(Status.SUCCESS.getCode());
+        result.setMsg(Status.SUCCESS.getMsg());
+
+        when(taskInstanceService.queryTaskListPaging(any(), eq(1L), eq(1), eq(""), eq(""), eq(""), any(), eq(""), any(),
+                any(),
+                eq(""), Mockito.any(), eq("192.168.xx.xx"), eq(TaskExecuteType.BATCH), any(), any()))
+                        .thenReturn(result);
+        Result<PageInfo<TaskInstance>> taskResult = taskInstanceController.queryTaskListPaging(null, 1L, 1, "", "", "",
+                "", 1L, "", TaskExecutionStatus.SUCCESS, "192.168.xx.xx", "2020-01-01 00:00:00", "2020-01-02 00:00:00",
+                TaskExecuteType.BATCH, pageNo, pageSize);
+        Assertions.assertEquals(Integer.valueOf(Status.SUCCESS.getCode()), taskResult.getCode());
+        PageInfo<TaskInstance> maskedPage = taskResult.getData();
+        Assertions.assertTrue(
+                maskedPage.getTotalList().get(0).getTaskParams().contains(TaskConstants.SENSITIVE_DATA_MASK));
+        Assertions.assertFalse(maskedPage.getTotalList().get(0).getTaskParams().contains("abc"));
+        Assertions.assertTrue(taskInstance.getTaskParams().contains("abc"));
+    }
+
+    @Disabled
+    @Test
+    public void testForceTaskSuccess() throws Exception {
         MultiValueMap<String, String> paramsMap = new LinkedMultiValueMap<>();
-        //paramsMap.add("processInstanceId","1380");
-        paramsMap.add("searchVal","");
-        paramsMap.add("taskName","");
-        //paramsMap.add("stateType","");
-        paramsMap.add("startDate","2019-02-26 19:48:00");
-        paramsMap.add("endDate","2019-02-26 19:48:22");
-        paramsMap.add("pageNo","1");
-        paramsMap.add("pageSize","20");
+        paramsMap.add("taskInstanceId", "104");
 
-        MvcResult mvcResult = mockMvc.perform(get("/projects/{projectName}/task-instance/list-paging","cxc_1113")
+        Mockito.doNothing().when(taskInstanceService).forceTaskSuccess(any(User.class), anyLong(), anyInt());
+
+        MvcResult mvcResult = mockMvc.perform(post("/projects/{projectName}/task-instance/force-success", "cxc_1113")
                 .header(SESSION_ID, sessionId)
                 .params(paramsMap))
                 .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON_UTF8))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andReturn();
 
         Result result = JSONUtils.parseObject(mvcResult.getResponse().getContentAsString(), Result.class);
-        Assert.assertEquals(Status.SUCCESS.getCode(),result.getCode().intValue());
-        logger.info(mvcResult.getResponse().getContentAsString());
+        Assertions.assertEquals(Status.SUCCESS.getCode(), result.getCode().intValue());
     }
+
 }

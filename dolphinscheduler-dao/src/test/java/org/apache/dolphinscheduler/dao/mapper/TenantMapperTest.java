@@ -14,46 +14,42 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.dolphinscheduler.dao.mapper;
 
-
+import org.apache.dolphinscheduler.dao.BaseDaoTest;
 import org.apache.dolphinscheduler.dao.entity.Queue;
 import org.apache.dolphinscheduler.dao.entity.Tenant;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.annotation.Rollback;
-import org.springframework.test.context.junit4.SpringRunner;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
-@RunWith(SpringRunner.class)
-@SpringBootTest
-@Transactional
-@Rollback(true)
-public class TenantMapperTest {
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+
+public class TenantMapperTest extends BaseDaoTest {
 
     @Autowired
-    TenantMapper tenantMapper;
+    private TenantMapper tenantMapper;
 
     @Autowired
-    QueueMapper queueMapper;
+    private QueueMapper queueMapper;
 
     /**
      * insert
      * @return Tenant
      */
-    private Tenant insertOne(){
-        //insertOne
+    private Tenant insertOne() {
+        // insertOne
         Tenant tenant = new Tenant();
         tenant.setCreateTime(new Date());
         tenant.setUpdateTime(new Date());
+        tenant.setTenantCode("test_code");
         tenantMapper.insert(tenant);
         return tenant;
     }
@@ -62,23 +58,23 @@ public class TenantMapperTest {
      * test update
      */
     @Test
-    public void testUpdate(){
-        //insertOne
+    public void testUpdate() {
+        // insertOne
         Tenant tenant = insertOne();
         tenant.setUpdateTime(new Date());
-        //update
+        // update
         int update = tenantMapper.updateById(tenant);
-        Assert.assertEquals(1, update);
+        Assertions.assertEquals(1, update);
     }
 
     /**
      * test delete
      */
     @Test
-    public void testDelete(){
+    public void testDelete() {
         Tenant tenant = insertOne();
         int delete = tenantMapper.deleteById(tenant.getId());
-        Assert.assertEquals(1, delete);
+        Assertions.assertEquals(1, delete);
     }
 
     /**
@@ -87,9 +83,9 @@ public class TenantMapperTest {
     @Test
     public void testQuery() {
         Tenant tenant = insertOne();
-        //query
+        // query
         List<Tenant> tenants = tenantMapper.selectList(null);
-        Assert.assertNotEquals(tenants.size(), 0);
+        Assertions.assertNotEquals(0, tenants.size());
     }
 
     /**
@@ -103,14 +99,13 @@ public class TenantMapperTest {
         queue.setQueue("ut queue");
         queueMapper.insert(queue);
 
-
         Tenant tenant = insertOne();
         tenant.setQueueId(queue.getId());
         tenantMapper.updateById(tenant);
 
         Tenant tenant1 = tenantMapper.queryById(tenant.getId());
 
-        Assert.assertNotEquals(tenant1, null);
+        Assertions.assertNotEquals(null, tenant1);
     }
 
     /**
@@ -118,10 +113,10 @@ public class TenantMapperTest {
      */
     @Test
     public void testQueryByTenantCode() {
-
         Tenant tenant = insertOne();
         tenant.setTenantCode("ut code");
         tenantMapper.updateById(tenant);
+        Assertions.assertNotNull(tenantMapper.queryByTenantCode("ut code"));
     }
 
     /**
@@ -137,13 +132,22 @@ public class TenantMapperTest {
 
         Tenant tenant = insertOne();
         tenant.setTenantCode("ut code");
-        tenant.setTenantName("ut name");
         tenant.setQueueId(queue.getId());
         tenantMapper.updateById(tenant);
-        Page<Tenant> page = new Page(1,3);
+        Page<Tenant> page = new Page(1, 3);
 
-        IPage<Tenant> tenantIPage = tenantMapper.queryTenantPaging(page, tenant.getTenantName());
+        // tenant.getTenantCode() used instead of tenant.getTenantName()
+        IPage<Tenant> tenantIPage =
+                tenantMapper.queryTenantPaging(page, Collections.singletonList(tenant.getId()), tenant.getTenantCode());
 
-        Assert.assertNotEquals(tenantIPage.getTotal(), 0);
+        Assertions.assertNotEquals(0, tenantIPage.getTotal());
+    }
+
+    @Test
+    public void testExistTenant() {
+        String tenantCode = "test_code";
+        Assertions.assertNull(tenantMapper.existTenant(tenantCode));
+        insertOne();
+        Assertions.assertTrue(tenantMapper.existTenant(tenantCode));
     }
 }

@@ -14,32 +14,49 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.dolphinscheduler.common.utils;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.junit.Assert;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-/**
- * HttpClient utils test
- */
+import org.junit.jupiter.api.Test;
+
 public class HttpUtilsTest {
 
+    @Test
+    void testGetRequest() {
+        // test HTTP URL
+        String response1 = HttpUtils.get("http://www.bing.com/");
+        assertNotNull(response1, "Response should not be null for a http URL");
+    }
 
-	public static final Logger logger = LoggerFactory.getLogger(HttpUtilsTest.class);
+    /**
+     * test invalid certification HTTPS URL
+     */
+    @Test
+    void testGetInvalidRequest() {
+        // test invalid certification HTTPS URL
+        String response2 = HttpUtils.get("https://poc.bzzt.net");
+        assertNull(response2,
+                "Response should be null for an invalid certification https URL and throw exception in console");
+    }
 
+    /**
+     * test valid certification HTTPS URL
+     */
+    @Test
+    void testGetValidRequest() {
+        String response3 = HttpUtils.get("https://www.bing.com/");
+        assertNotNull(response3, "Response should not be null for a valid certification https URL");
+    }
 
-	@Test
-	public void testGetTest(){
-		//success
-		String result = HttpUtils.get("https://github.com/manifest.json");
-		Assert.assertNotNull(result);
-		ObjectNode jsonObject = JSONUtils.parseObject(result);
-		Assert.assertEquals("GitHub", jsonObject.path("name").asText());
-
-		result = HttpUtils.get("https://123.333.111.33/ccc");
-		Assert.assertNull(result);
-	}
+    /**
+     * test wrong URL
+     */
+    @Test
+    void testGetWrongRequest() {
+        String response4 = HttpUtils.get("/abc/22");
+        assertNull(response4, "Response should be null for a wrong url");
+    }
 }
